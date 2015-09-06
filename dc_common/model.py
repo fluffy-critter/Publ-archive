@@ -58,21 +58,25 @@ class Global(BaseModel):
         return 0
 
 class User(BaseModel):
-    ''' A user in the system '''
     username = CharField(unique=True)
     display_name = CharField(unique=True)
-    homepage = CharField(null=True)
     pwhash = CharField() # We're going to use bcrypt. Right? Right.
     email = CharField()
     is_admin = BooleanField(default=False)
     reset_key = CharField(null=True)
+
+class Session(BaseModel):
+    session_id = CharField(unique=True)
+    user = ForeignKeyField(User, related_name='sessions', null=True)
+    last_ip = CharField()
+    last_seen = DateTimeField()
 
 class AdminLog(BaseModel):
     ''' Administrative action log '''
     timestamp = DateTimeField(default=datetime.datetime.now)
     user = ForeignKeyField(User, related_name='actions')
     ip = CharField()
-    url = CharField()
+    request_path = CharField()
     description = TextField()
     session_id = CharField()
     class Meta:
@@ -80,25 +84,34 @@ class AdminLog(BaseModel):
             (('user', 'timestamp'), False),
         )
 
+class UserLinks(BaseModel):
+    user = ForeignKeyField(User, related_name='links')
+    title = CharField()
+    url = CharField()
+    description = CharField(null=True)
+
 class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
     name = CharField()
-    max_image_width = IntegerField()
+    viewport_width = IntegerField()
     css_file = CharField()
 
 class Series(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
     title = CharField()
+    description = TextField()
     theme = ForeignKeyField(Theme, null=True)
 
 class Story(BaseModel):
     series = ForeignKeyField(Series, related_name='stories')
     title = CharField()
+    description = TextField()
     theme = ForeignKeyField(Theme, null=True)
 
 class Chapter(BaseModel):
     story = ForeignKeyField(Story, related_name='chapters')
     title = CharField()
+    description = TextField()
     recap_text = TextField(null=True)
     theme = ForeignKeyField(Theme, null=True)
 
@@ -106,10 +119,14 @@ class Page(BaseModel):
     series = ForeignKeyField(Series, related_name='pages')
     chapter = ForeignKeyField(Chapter, related_name='pages', null=True)
     title = CharField()
-    publish_date = DateTimeField(default=datetime.datetime.now)
+    publish_date = DateField(default=datetime.datetime.now, index=True)
     is_visible = BooleanField(default=False)
     notes = TextField(null=True)
     theme = ForeignKeyField(Theme, null=True)
+    class Meta:
+        indexes = (
+            (('series', 'publish_date'), False),
+        )
 
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
@@ -117,21 +134,22 @@ class Asset(BaseModel):
     content_text = TextField(null=True)
 
 class PageContent(BaseModel):
-    display_order = IntegerField()
+    display_order = IntegerField(default=0)
     page = ForeignKeyField(Page, related_name='assets')
     asset = ForeignKeyField(Asset, related_name='pages')
+    class Meta:
+        indexes = (
+            (('page', 'display_order'), False),
+        )
 
 class Transcript(BaseModel):
     page = ForeignKeyField(Page, related_name='transcripts')
     text = TextField()
     accepted = BooleanField(default=False)
-    submitter_name = CharField(null=True)
-    submitter_email = CharField(null=True)
-    submitter_homepage = CharField(null=True)
 
-class BlogEntry(BaseModel):
-    user = ForeignKeyField(User, related_name='comments')
-    page = ForeignKeyField(Page, related_name='comments', null=True)
+class NewsPost(BaseModel):
+    user = ForeignKeyField(User, related_name='news_posts')
+    page = ForeignKeyField(Page, related_name='news_posts', null=True)
     date_posted = DateTimeField(default=datetime.datetime.now, index=True)
     title = CharField()
     text = TextField()
