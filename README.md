@@ -28,7 +28,7 @@ These instructions assume you're on a UNIXy system (Linux, OSX, Windows + Git ba
 
 You now have a virtualenv container. You can use `. env/bin/activate` to run within that container, or you can just do e.g. `env/bin/pip` et al to run the individual tools (for example, `env/bin/pip install some-random-package` or `env/bin/pip freeze > requirements.txt` or whatever).
 
-You can also use `git pull dreamcatcher` to pull updates from me. You'll probably need to fix any merge conflicts that occur in `requirements.txt`.
+You can also use `git pull dreamcatcher master` to pull updates from me. You'll probably need to fix any merge conflicts that occur in `requirements.txt`.
 
 If you want to submit a patch against this repo, the easiest way is to fork the repo on Github, make your changes in that repo, and submit a pull request to me. (Advanced users can also set their `dreamcatcher` remote to their own Github fork etc.)
 
