@@ -197,6 +197,7 @@ class NewsPost(BaseModel):
 all_types = [
     Global, #MUST come first
     User,
+    Session,
     AdminLog,
 ]
 
