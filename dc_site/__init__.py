@@ -1,4 +1,4 @@
-from flask import Flask, request, send_from_directory, url_for, session, render_template
+from flask import Flask, send_from_directory, render_template
 from dc_common import model
 from dc_site.caching import cache, make_key
 import os
@@ -7,7 +7,7 @@ import base64
 import logging
 import logging.handlers
 
-app = Flask(__name__, static_folder=config.static_root_dir, static_path=config.static_path)
+app = Flask(__name__.split('.')[0], static_folder=config.static_root_dir, static_url_path=config.static_url_path)
 cache.init_app(app)
 
 # Set up the logger
@@ -24,6 +24,8 @@ app.secret_key = model.Global.get_or_create(key='sessionKey', defaults={
     "string_value": base64.b64encode(os.urandom(24))
     })[0].string_value
 
+### Add your routing rules here
+
 @app.route('/')
 @cache.cached(timeout=3600,key_prefix=make_key)
 def main_page():
@@ -35,4 +37,4 @@ def main_page():
 # environment the existence of the static content will override Passenger entirely.
 @app.route('/<path:filename>')
 def static_content(filename):
-    return send_from_directory(static_root_dir, filename)
+    return send_from_directory(config.static_root_dir, filename)

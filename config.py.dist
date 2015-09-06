@@ -10,7 +10,7 @@ cache_config = {'CACHE_TYPE': 'simple'}
 # Where to find the content from the application server's perspective
 static_root_dir = os.path.join(os.getcwd(), 'public')
 # Static content root as visible on the web (e.g. '//cdn.domain.com/')
-static_path = '/' # or CDN.domain.com
+static_url_path = '/' # or CDN.domain.com
 
 ''' Default configuration: local SQLite store '''
 database = SqliteDatabase('data/site.db')
