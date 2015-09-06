@@ -1,0 +1,25 @@
+from peewee import *
+from playhouse.migrate import *
+from playhouse.pool import *
+import os
+
+''' Caching configuration; defaults to simple in-memory cache. See http://pythonhosted.org/Flask-Cache/ '''
+cache_config = {'CACHE_TYPE': 'simple'}
+
+''' Static content configuration; change these if you want to host your static content on another subdomain/CDN/etc. '''
+# Where to find the content from the application server's perspective
+static_root_dir = os.path.join(os.getcwd(), 'public')
+# Static content root as visible on the web (e.g. '//cdn.domain.com/')
+static_path = '/' # or CDN.domain.com
+
+''' Default configuration: local SQLite store '''
+database = SqliteDatabase('data/site.db')
+migrator = SqliteMigrator(database)
+
+''' MySQL config for production '''
+# database = PooledMySQLDatabase('database_name',
+#     host='mysql.example.com',
+#     user='dbuser',
+#     passwd='mypasswd',
+#     )
+# migrator = MySQLMigrator(database)
