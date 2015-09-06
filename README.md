@@ -12,7 +12,7 @@ It provides the following:
 * a `run.py` script that behaves the same way as Passenger
 * a starter [Flask](http://flask.pocoo.org/) site which does pretty much nothing
 * a basic [Peewee](http://peewee.readthedocs.org/) base schema with a not-terrible schema migration mechanism
-* a simple configuration mechanism (`config.py`) which defaults to an SQLite database and has a commented-out MySQL configuration that is easy to switch to
+* a simple configuration mechanism (`config.py`)
 
 ## How to use it
 
