@@ -1,6 +1,7 @@
 # model.py - Peewee database model
 
 from peewee import *
+from playhouse.migrate import migrate
 from config import database, migrator
 import datetime
 
@@ -30,12 +31,12 @@ class BaseModel(Model):
         Only process updates if check_update is true. Example:
 
             if check_update and from_version < 1:
-                migrate(
+                migrator.migrate(
                     migrator.add_column('BlahTable', 'foo', BlahTable.foo),
                     migrator.add_column('BlahTable', 'bar', BlahTable.baz), # changed from 'bar' to 'baz' in verison 2
                 )
             if check_update and from_version < 2:
-                migrate(
+                migrator.migrate(
                     migrator.rename_column('BlahTable', 'bar', 'baz'),
                 )
             return 2
