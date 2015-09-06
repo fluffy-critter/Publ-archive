@@ -5,7 +5,6 @@ from playhouse.migrate import migrate
 from config import database, migrator
 from enum import Enum
 import datetime
-import enum34
 
 database.connect()
 
@@ -91,26 +90,22 @@ class UserLinks(BaseModel):
     url = CharField()
     description = CharField(null=True)
 
-class RenderSet(BaseModel):
-    name = CharField()
-
-class FitMode(Enum):
-    full = 0
-    crop = 1
+class SizeMode(Enum):
+    harmonic = 0
+    exact = 1
     @staticmethod
     class Field(IntegerField):
         def db_value(self,value):
             return value.value
         def python_value(self,value):
-            return FitMode(value)
+            return SizeMode(value)
 
-class RenderSize(BaseModel):
-    render_set = ForeignKeyField(RenderSet, related_name='sizes')
-    max_width = IntegerField(null=True)
-    max_height = IntegerField(null=True)
-    dpi_multiplier = IntegerField()
-    jpeg_quality = IntegerField()
-    fit_mode = FitMode.Field()
+class RenderSet(BaseModel):
+    user = ForeignKeyField(User, related_name='render_sets')
+    name = CharField()
+    width = IntegerField()
+    height = IntegerField(null=True)
+    size_mode = SizeMode.Field()
 
 class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
@@ -152,24 +147,33 @@ class Page(BaseModel):
 
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
-    content_file = CharField(null=True)
-    content_text = TextField(null=True)
+    content_file = CharField()
 
 class RenderedAsset(BaseModel):
     asset = ForeignKeyField(Asset, related_name='renders')
+    render_set = ForeignKeyField(RenderSet)
     filename = CharField()
     size_width = IntegerField()
     size_height = IntegerField()
-    render_size = ForeignKeyField(RenderSize)
+    dpi_multiplier = IntegerField()
+    render_set = RenderSet()
     class Meta:
         indexes = (
-            (('asset', 'render_size'), True),
+            (('asset', 'render_set', 'dpi_multiplier'), True),
         )
 
 class PageContent(BaseModel):
-    display_order = IntegerField(default=0)
+    ''' A content chunk within a page '''
     page = ForeignKeyField(Page, related_name='assets')
-    asset = ForeignKeyField(Asset, related_name='pages')
+    display_order = IntegerField(default=0)
+    content_type = CharField(null=True)
+    asset = ForeignKeyField(Asset, related_name='pages', null=True)
+    asset_text = TextField(null=True)
+    asset_link = TextField(null=True)
+    # Custom HTML for this content chunk, to override the default.
+    # Default is something like:
+    #  <div class="{content_type}"><a href="{asset_link}"><img src="{asset}" srcset="{asset_srcset}" title="{asset_text}"></a></div>
+    custom_html = TextField(null=True)
     class Meta:
         indexes = (
             (('page', 'display_order'), False),
