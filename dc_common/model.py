@@ -90,11 +90,32 @@ class UserLinks(BaseModel):
     url = CharField()
     description = CharField(null=True)
 
+class RenderSet(BaseModel):
+    name = CharField()
+
+class FitMode(Enum):
+    full = 0
+    crop = 1
+    @staticmethod
+    class Field(IntegerField):
+        def db_value(self,value):
+            return value.value
+        def python_value(self,value):
+            return FitMode(value)
+
+class RenderSize(BaseModel):
+    render_set = ForeignKeyField(RenderSet, related_name='sizes')
+    max_width = IntegerField(null=True)
+    max_height = IntegerField(null=True)
+    dpi_multiplier = IntegerField()
+    jpeg_quality = IntegerField()
+    fit_mode = FitMode.Field()
+
 class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
     name = CharField()
-    viewport_width = IntegerField()
     css_file = CharField()
+    render_set = ForeignKeyField(RenderSet)
 
 class Series(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
@@ -132,6 +153,17 @@ class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
     content_file = CharField(null=True)
     content_text = TextField(null=True)
+
+class RenderedAsset(BaseModel):
+    asset = ForeignKeyField(Asset, related_name='renders')
+    filename = CharField()
+    size_width = IntegerField()
+    size_height = IntegerField()
+    render_size = ForeignKeyField(RenderSize)
+    class Meta:
+        indexes = (
+            (('asset', 'render_size'), True),
+        )
 
 class PageContent(BaseModel):
     display_order = IntegerField(default=0)
