@@ -66,6 +66,12 @@ class User(BaseModel):
     is_admin = BooleanField(default=False)
     reset_key = CharField(null=True)
 
+class Session(BaseModel):
+    session_id = CharField(unique=True)
+    user = ForeignKeyField(User, related_name='sessions', null=True)
+    last_ip = CharField()
+    last_seen = DateTimeField()
+
 class AdminLog(BaseModel):
     ''' Administrative action log '''
     timestamp = DateTimeField(default=datetime.datetime.now)
@@ -84,6 +90,7 @@ class AdminLog(BaseModel):
 all_types = [
     Global, #MUST come first
     User,
+    Session,
     AdminLog,
 ]
 
