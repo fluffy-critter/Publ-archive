@@ -2,7 +2,9 @@
 
 from peewee import *
 from config import database, migrator
+from enum import Enum
 import datetime
+import enum34
 
 database.connect()
 
@@ -55,8 +57,6 @@ class Global(BaseModel):
         ''' Hook for migrating schemata, e.g. table names '''
         return 0
 
-''' Some sample tables to get you started '''
-
 class User(BaseModel):
     ''' A user in the system '''
     username = CharField(unique=True)
@@ -77,6 +77,35 @@ class AdminLog(BaseModel):
         indexes = (
             (('user', 'timestamp'), False),
         )
+
+class Series(BaseModel):
+    user = ForeignKeyField(User, related_name='series')
+    title = CharField()
+
+class Story(BaseModel):
+    series = ForeignKeyField(Series, related_name='stories')
+    title = CharField()
+
+class Chapter(BaseModel):
+    story = ForeignKeyField(Story, related_name='chapters')
+    title = CharField()
+
+class Page(BaseModel):
+    series = ForeignKeyField(Series, related_name='pages')
+    chapter = ForeignKeyField(Chapter, related_name='pages', null=True)
+    title = CharField()
+    publish_date = DateTimeField(default=datetime.datetime.now)
+    is_visible = BooleanField(default=False)
+
+class Asset(BaseModel):
+    user = ForeignKeyField(User, related_name='assets')
+    content_file = CharField(null=True)
+    content_text = TextField(null=True)
+
+class PageAsset(BaseModel):
+    display_order = IntegerField()
+    page = ForeignKeyField(Page, related_name='assets')
+    asset = ForeignKeyField(Asset, related_name='pages')
 
 ''' Table management '''
 
