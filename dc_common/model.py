@@ -80,18 +80,27 @@ class AdminLog(BaseModel):
             (('user', 'timestamp'), False),
         )
 
+class Theme(BaseModel):
+    owner = ForeignKeyField(User, related_name='themes')
+    name = CharField()
+    max_image_width = IntegerField()
+    css_file = CharField()
+
 class Series(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
     title = CharField()
+    theme = ForeignKeyField(Theme, null=True)
 
 class Story(BaseModel):
     series = ForeignKeyField(Series, related_name='stories')
     title = CharField()
+    theme = ForeignKeyField(Theme, null=True)
 
 class Chapter(BaseModel):
     story = ForeignKeyField(Story, related_name='chapters')
     title = CharField()
     recap_text = TextField(null=True)
+    theme = ForeignKeyField(Theme, null=True)
 
 class Page(BaseModel):
     series = ForeignKeyField(Series, related_name='pages')
@@ -99,43 +108,34 @@ class Page(BaseModel):
     title = CharField()
     publish_date = DateTimeField(default=datetime.datetime.now)
     is_visible = BooleanField(default=False)
+    notes = TextField(null=True)
+    theme = ForeignKeyField(Theme, null=True)
 
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
     content_file = CharField(null=True)
     content_text = TextField(null=True)
 
-class PageAsset(BaseModel):
+class PageContent(BaseModel):
     display_order = IntegerField()
     page = ForeignKeyField(Page, related_name='assets')
     asset = ForeignKeyField(Asset, related_name='pages')
 
 class Transcript(BaseModel):
-    user = ForeignKeyField(User, related_name='transcripts')
     page = ForeignKeyField(Page, related_name='transcripts')
     text = TextField()
     accepted = BooleanField(default=False)
+    submitter_name = CharField(null=True)
+    submitter_email = CharField(null=True)
+    submitter_homepage = CharField(null=True)
 
-class CommentState(Enum):
-    visible = 0
-    mod_flagged = 1
-    mod_hidden = 2
-    @staticmethod
-    class Field(IntegerField):
-        def db_value(self,value):
-            return value.value
-        def python_value(self,value):
-            return FightState(value)
-
-
-class Comment(BaseModel):
+class BlogEntry(BaseModel):
     user = ForeignKeyField(User, related_name='comments')
-    page = ForeignKeyField(Page, related_name='comments')
+    page = ForeignKeyField(Page, related_name='comments', null=True)
+    date_posted = DateTimeField(default=datetime.datetime.now, index=True)
+    title = CharField()
     text = TextField()
-    date_posted = DateTimeField(default=datetime.datetime.now)
-    status = CommentState.Field
-    rating_count = IntegerField(default=0)
-    rating_score = IntegerField(default=0)
+    is_visible = BooleanField(default=False)
 
 ''' Table management '''
 
