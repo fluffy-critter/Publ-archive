@@ -27,11 +27,9 @@ app.secret_key = model.Global.get_or_create(key='sessionKey', defaults={
 ### Add your routing rules here
 
 @app.route('/')
-@cache.cached(timeout=3600,key_prefix=make_key)
+@cache.cached(timeout=300,key_prefix=make_key)
 def main_page():
     return render_template('index.html')
-
-
 
 # Fallback for static content; note that this is just for local server development, as in the Dreamhost
 # environment the existence of the static content will override Passenger entirely.

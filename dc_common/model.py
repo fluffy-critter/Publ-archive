@@ -4,7 +4,6 @@ from peewee import *
 from playhouse.migrate import migrate
 from config import database, migrator
 from enum import Enum
-import datetime
 
 database.connect()
 
@@ -65,15 +64,9 @@ class User(BaseModel):
     is_admin = BooleanField(default=False)
     reset_key = CharField(null=True)
 
-class Session(BaseModel):
-    session_id = CharField(unique=True)
-    user = ForeignKeyField(User, related_name='sessions', null=True)
-    last_ip = CharField()
-    last_seen = DateTimeField()
-
 class AdminLog(BaseModel):
     ''' Administrative action log '''
-    timestamp = DateTimeField(default=datetime.datetime.now)
+    timestamp = DateTimeField()
     user = ForeignKeyField(User, related_name='actions')
     ip = CharField()
     request_path = CharField()
@@ -91,8 +84,8 @@ class UserLinks(BaseModel):
     description = CharField(null=True)
 
 class SizeMode(Enum):
-    harmonic = 0
-    exact = 1
+    harmonic = 0    # base DPI is an N:1 reduction, higher DPIs are N:M
+    exact = 1       # reduce exactly to fit
     @staticmethod
     class Field(IntegerField):
         def db_value(self,value):
@@ -100,50 +93,149 @@ class SizeMode(Enum):
         def python_value(self,value):
             return SizeMode(value)
 
-class RenderSet(BaseModel):
-    user = ForeignKeyField(User, related_name='render_sets')
-    name = CharField()
-    width = IntegerField()
+class RenderSpec(BaseModel):
+    user = ForeignKeyField(User, related_name='render_specs')
+    name = CharField(unique=True)
+    width = IntegerField(null=True)
     height = IntegerField(null=True)
     size_mode = SizeMode.Field()
+    default_jpeg_quality = IntegerField()
+
+class RenderQuality(BaseModel):
+    render_spec = ForeignKeyField(RenderSpec, related_name="render_quality")
+    multiplier = IntegerField()
+    jpeg_quality = IntegerField()
+    class Meta:
+        indexes = (
+            (('render_spec', 'multiplier'), True),
+        )
 
 class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
     name = CharField()
-    css_file = CharField()
-    render_set = ForeignKeyField(RenderSet)
+    render_spec = ForeignKeyField(RenderSpec)
 
 class Series(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
+    key = CharField(unique=True)
     title = CharField()
     description = TextField()
-    theme = ForeignKeyField(Theme, null=True)
+    theme = ForeignKeyField(Theme)
 
 class Story(BaseModel):
     series = ForeignKeyField(Series, related_name='stories')
+    key = CharField(unique=True)
+    display_order = IntegerField(null=True)
     title = CharField()
     description = TextField()
     theme = ForeignKeyField(Theme, null=True)
+    class Meta:
+        indexes = (
+            (('key', 'display_order'), False),
+        )
 
 class Chapter(BaseModel):
     story = ForeignKeyField(Story, related_name='chapters')
     title = CharField()
     description = TextField()
-    recap_text = TextField(null=True)
     theme = ForeignKeyField(Theme, null=True)
+    display_order = IntegerField(null=True)
+    class Meta:
+        indexes = (
+            (('story', 'display_order'), False),
+        )
+
+class PageType(Enum):
+    series = 0
+    info = 1
+    @staticmethod
+    class Field(IntegerField):
+        def db_value(self,value):
+            return value.value
+        def python_value(self,value):
+            return PageType(value)
 
 class Page(BaseModel):
-    series = ForeignKeyField(Series, related_name='pages')
+    series = ForeignKeyField(Series, related_name='pages', null=True)
     chapter = ForeignKeyField(Chapter, related_name='pages', null=True)
+    page_type = PageType.Field()
     title = CharField()
-    publish_date = DateField(default=datetime.datetime.now, index=True)
+    description = TextField(null=True)
+    publish_date = DateField(index=True)
     is_visible = BooleanField(default=False)
     notes = TextField(null=True)
     theme = ForeignKeyField(Theme, null=True)
     class Meta:
         indexes = (
-            (('series', 'publish_date'), False),
+            (('page_type', 'series', 'chapter', 'publish_date'), False),
         )
+
+    @property
+    def archive_order(self):
+        return (self.publish_date,self.key)
+
+    @staticmethod
+    def visible_pages(now,series=None,chapter=None):
+        q = Page.select().where((Page.is_visible == True) & (Page.publish_date < now))
+        if series:
+            q = q.where(Page.series == series)
+        if chapter:
+            q = q.where(Page.chapter == chapter)
+        return q
+
+    @property
+    def next_page(self,now,same_series=False,same_chapter=False):
+        q = Page.visible_pages(
+            now,
+            same_series and Page.series,
+            same_chapter and Page.chapter
+            ).where(Page.publish_date >= self.publish_date)
+
+        q = q.order_by(Page.publish_date, Page.key)
+        for r in q:
+            if (r.archive_order > self.archive_order):
+                return r
+        return None
+
+    @property
+    def previous_page(self,now,same_series=False,same_chapter=False):
+        q = Page.visible_pages(
+            now,
+            same_series and Page.series,
+            same_chapter and Page.chapter
+            ).where(Page.publish_date <= self.publish_date)
+
+        q = q.order_by(-Page.publish_date, -Page.key)
+        for r in q:
+            if (r.archive_order < self.archive_order):
+                return r
+        return None
+
+    @property
+    def first_page(self,now,same_series=False,same_chapter=False):
+        q = Page.visible_pages(
+            now,
+            same_series and Page.series,
+            same_chapter and Page.chapter
+            )
+
+        q = q.order_by(Page.publish_date, Page.key)
+        for r in q:
+            return r
+        return None
+
+    @property
+    def first_page(self,now,same_series=False,same_chapter=False):
+        q = Page.visible_pages(
+            now,
+            same_series and Page.series,
+            same_chapter and Page.chapter
+            )
+
+        q = q.order_by(-Page.publish_date, -Page.key)
+        for r in q:
+            return r
+        return None
 
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
@@ -151,15 +243,14 @@ class Asset(BaseModel):
 
 class RenderedAsset(BaseModel):
     asset = ForeignKeyField(Asset, related_name='renders')
-    render_set = ForeignKeyField(RenderSet)
+    render_spec = ForeignKeyField(RenderSpec)
     filename = CharField()
     size_width = IntegerField()
     size_height = IntegerField()
     dpi_multiplier = IntegerField()
-    render_set = RenderSet()
     class Meta:
         indexes = (
-            (('asset', 'render_set', 'dpi_multiplier'), True),
+            (('asset', 'render_spec', 'dpi_multiplier'), True),
         )
 
 class PageContent(BaseModel):
@@ -172,7 +263,7 @@ class PageContent(BaseModel):
     asset_link = TextField(null=True)
     # Custom HTML for this content chunk, to override the default.
     # Default is something like:
-    #  <div class="{content_type}"><a href="{asset_link}"><img src="{asset}" srcset="{asset_srcset}" title="{asset_text}"></a></div>
+    #  <div class="{content_type}"><a href="{asset_link}"><img src="{asset_src}" srcset="{asset_srcset}" title="{asset_text}"></a></div>
     custom_html = TextField(null=True)
     class Meta:
         indexes = (
@@ -187,7 +278,7 @@ class Transcript(BaseModel):
 class NewsPost(BaseModel):
     user = ForeignKeyField(User, related_name='news_posts')
     page = ForeignKeyField(Page, related_name='news_posts', null=True)
-    date_posted = DateTimeField(default=datetime.datetime.now, index=True)
+    date_posted = DateTimeField(index=True)
     title = CharField()
     text = TextField()
     is_visible = BooleanField(default=False)
@@ -197,8 +288,24 @@ class NewsPost(BaseModel):
 all_types = [
     Global, #MUST come first
     User,
-    Session,
     AdminLog,
+
+    UserLinks,
+
+    RenderSpec,
+    RenderQuality,
+    Theme,
+
+    Series,
+    Story,
+    Chapter,
+    Page,
+
+    Asset,
+    RenderedAsset,
+    PageContent,
+    Transcript,
+    NewsPost,
 ]
 
 def create_tables():
