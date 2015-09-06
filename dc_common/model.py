@@ -60,6 +60,8 @@ class Global(BaseModel):
 class User(BaseModel):
     ''' A user in the system '''
     username = CharField(unique=True)
+    display_name = CharField(unique=True)
+    homepage = CharField(null=True)
     pwhash = CharField() # We're going to use bcrypt. Right? Right.
     email = CharField()
     is_admin = BooleanField(default=False)
@@ -79,7 +81,7 @@ class AdminLog(BaseModel):
         )
 
 class Series(BaseModel):
-    user = ForeignKeyField(User, related_name='series')
+    owner = ForeignKeyField(User, related_name='series')
     title = CharField()
 
 class Story(BaseModel):
@@ -89,6 +91,7 @@ class Story(BaseModel):
 class Chapter(BaseModel):
     story = ForeignKeyField(Story, related_name='chapters')
     title = CharField()
+    recap_text = TextField(null=True)
 
 class Page(BaseModel):
     series = ForeignKeyField(Series, related_name='pages')
@@ -106,6 +109,33 @@ class PageAsset(BaseModel):
     display_order = IntegerField()
     page = ForeignKeyField(Page, related_name='assets')
     asset = ForeignKeyField(Asset, related_name='pages')
+
+class Transcript(BaseModel):
+    user = ForeignKeyField(User, related_name='transcripts')
+    page = ForeignKeyField(Page, related_name='transcripts')
+    text = TextField()
+    accepted = BooleanField(default=False)
+
+class CommentState(Enum):
+    visible = 0
+    mod_flagged = 1
+    mod_hidden = 2
+    @staticmethod
+    class Field(IntegerField):
+        def db_value(self,value):
+            return value.value
+        def python_value(self,value):
+            return FightState(value)
+
+
+class Comment(BaseModel):
+    user = ForeignKeyField(User, related_name='comments')
+    page = ForeignKeyField(Page, related_name='comments')
+    text = TextField()
+    date_posted = DateTimeField(default=datetime.datetime.now)
+    status = CommentState.Field
+    rating_count = IntegerField(default=0)
+    rating_score = IntegerField(default=0)
 
 ''' Table management '''
 
