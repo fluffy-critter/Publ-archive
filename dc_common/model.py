@@ -197,6 +197,13 @@ class Transcript(BaseModel):
     text = TextField()
     accepted = BooleanField(default=False)
 
+class Tag(BaseModel):
+    name = CharField(unique=True)
+
+class TaggedPage(BaseModel):
+    tag = ForeignKeyField(Tag, 'pages')
+    page = ForeignKeyField(Page, 'tags')
+
 ''' Table management '''
 
 all_types = [
