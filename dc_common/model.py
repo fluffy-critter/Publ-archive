@@ -57,11 +57,15 @@ class Global(BaseModel):
         return 0
 
 class User(BaseModel):
-    username = CharField(unique=True)
     display_name = CharField(unique=True)
-    pwhash = CharField() # We're going to use bcrypt. Right? Right.
-    email = CharField()
     is_admin = BooleanField(default=False)
+
+class PasswordIdentity(BaseModel):
+    ''' Standard signin identity: username/password (TODO: OAuth, OpenID) '''
+    user = ForeignKeyField(User, 'password')
+    username = CharField(unique=True)
+    pwhash = CharField() # We're going to use bcrypt. Right? Right.
+    email = CharField(unique=True)
     reset_key = CharField(null=True)
 
 class AdminLog(BaseModel):
@@ -83,71 +87,17 @@ class UserLinks(BaseModel):
     url = CharField()
     description = CharField(null=True)
 
-class SizeMode(Enum):
-    harmonic = 0    # base DPI is an N:1 reduction, higher DPIs are N:M
-    exact = 1       # reduce exactly to fit
-    @staticmethod
-    class Field(IntegerField):
-        def db_value(self,value):
-            return value.value
-        def python_value(self,value):
-            return SizeMode(value)
-
-class RenderSpec(BaseModel):
-    user = ForeignKeyField(User, related_name='render_specs')
-    name = CharField(unique=True)
-    width = IntegerField(null=True)
-    height = IntegerField(null=True)
-    size_mode = SizeMode.Field()
-    default_jpeg_quality = IntegerField()
-
-class RenderQuality(BaseModel):
-    render_spec = ForeignKeyField(RenderSpec, related_name="render_quality")
-    multiplier = IntegerField()
-    jpeg_quality = IntegerField()
-    class Meta:
-        indexes = (
-            (('render_spec', 'multiplier'), True),
-        )
-
-class Theme(BaseModel):
-    owner = ForeignKeyField(User, related_name='themes')
-    name = CharField()
-    render_spec = ForeignKeyField(RenderSpec)
-
-class Series(BaseModel):
+class Section(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
     key = CharField(unique=True)
     title = CharField()
     description = TextField()
-    theme = ForeignKeyField(Theme)
-
-class Story(BaseModel):
-    series = ForeignKeyField(Series, related_name='stories')
-    key = CharField(unique=True)
-    display_order = IntegerField(null=True)
-    title = CharField()
-    description = TextField()
-    theme = ForeignKeyField(Theme, null=True)
-    class Meta:
-        indexes = (
-            (('key', 'display_order'), False),
-        )
-
-class Chapter(BaseModel):
-    story = ForeignKeyField(Story, related_name='chapters')
-    title = CharField()
-    description = TextField()
-    theme = ForeignKeyField(Theme, null=True)
-    display_order = IntegerField(null=True)
-    class Meta:
-        indexes = (
-            (('story', 'display_order'), False),
-        )
+    parent = ForeignKeyField(Section, related_name='children', null=True)
+    continue_within_parent = BooleanField()
 
 class PageType(Enum):
-    series = 0
-    info = 1
+    serial = 0
+    static = 1
     @staticmethod
     class Field(IntegerField):
         def db_value(self,value):
@@ -155,10 +105,16 @@ class PageType(Enum):
         def python_value(self,value):
             return PageType(value)
 
+class ContentType(BaseModel):
+    type_name = CharField(unique=True)
+    display_name = CharField()
+    description = TextField(null=True)
+
 class Page(BaseModel):
-    series = ForeignKeyField(Series, related_name='pages', null=True)
-    chapter = ForeignKeyField(Chapter, related_name='pages', null=True)
+    page_id = CharField(unique=True)
+    section = ForeignKeyField(Section, related_name='pages', null=True)
     page_type = PageType.Field()
+    content_type = ForeignKeyField(ContentType, related_name='pages')
     title = CharField()
     description = TextField(null=True)
     publish_date = DateField(index=True)
@@ -175,20 +131,21 @@ class Page(BaseModel):
         return (self.publish_date,self.key)
 
     @staticmethod
-    def visible_pages(now,series=None,chapter=None):
+    def visible_pages(now,section=None):
         q = Page.select().where((Page.is_visible == True) & (Page.publish_date < now))
-        if series:
-            q = q.where(Page.series == series)
-        if chapter:
-            q = q.where(Page.chapter == chapter)
+        if section:
+            w = (Page.section == section)
+            while section.continue_within_parent:
+                w = w | (Page.section == section.parent)
+                section = section.parent
+            q = q.where(w)
         return q
 
     @property
-    def next_page(self,now,same_series=False,same_chapter=False):
+    def next_page(self,now,same_section=False):
         q = Page.visible_pages(
             now,
-            same_series and Page.series,
-            same_chapter and Page.chapter
+            same_section and Page.section
             ).where(Page.publish_date >= self.publish_date)
 
         q = q.order_by(Page.publish_date, Page.key)
@@ -198,7 +155,7 @@ class Page(BaseModel):
         return None
 
     @property
-    def previous_page(self,now,same_series=False,same_chapter=False):
+    def previous_page(self,now,same_section=False):
         q = Page.visible_pages(
             now,
             same_series and Page.series,
@@ -211,47 +168,12 @@ class Page(BaseModel):
                 return r
         return None
 
-    @property
-    def first_page(self,now,same_series=False,same_chapter=False):
-        q = Page.visible_pages(
-            now,
-            same_series and Page.series,
-            same_chapter and Page.chapter
-            )
-
-        q = q.order_by(Page.publish_date, Page.key)
-        for r in q:
-            return r
-        return None
-
-    @property
-    def first_page(self,now,same_series=False,same_chapter=False):
-        q = Page.visible_pages(
-            now,
-            same_series and Page.series,
-            same_chapter and Page.chapter
-            )
-
-        q = q.order_by(-Page.publish_date, -Page.key)
-        for r in q:
-            return r
-        return None
-
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
     content_file = CharField()
-
-class RenderedAsset(BaseModel):
-    asset = ForeignKeyField(Asset, related_name='renders')
-    render_spec = ForeignKeyField(RenderSpec)
-    filename = CharField()
-    size_width = IntegerField()
-    size_height = IntegerField()
-    dpi_multiplier = IntegerField()
-    class Meta:
-        indexes = (
-            (('asset', 'render_spec', 'dpi_multiplier'), True),
-        )
+    content_type = CharField()
+    width = IntegerField()
+    height = IntegerField()
 
 class PageContent(BaseModel):
     ''' A content chunk within a page '''
@@ -274,14 +196,6 @@ class Transcript(BaseModel):
     page = ForeignKeyField(Page, related_name='transcripts')
     text = TextField()
     accepted = BooleanField(default=False)
-
-class NewsPost(BaseModel):
-    user = ForeignKeyField(User, related_name='news_posts')
-    page = ForeignKeyField(Page, related_name='news_posts', null=True)
-    date_posted = DateTimeField(index=True)
-    title = CharField()
-    text = TextField()
-    is_visible = BooleanField(default=False)
 
 ''' Table management '''
 
