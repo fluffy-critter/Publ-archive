@@ -81,11 +81,14 @@ class AdminLog(BaseModel):
             (('user', 'timestamp'), False),
         )
 
-class UserLinks(BaseModel):
-    user = ForeignKeyField(User, related_name='links')
-    title = CharField()
-    url = CharField()
-    description = CharField(null=True)
+class Asset(BaseModel):
+    user = ForeignKeyField(User, related_name='assets')
+    content_file = CharField()
+    content_type = CharField()
+
+class Image(Asset):
+    width = IntegerField()
+    height = IntegerField()
 
 class Section(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
@@ -94,6 +97,7 @@ class Section(BaseModel):
     description = TextField()
     parent = ForeignKeyField(Section, related_name='children', null=True)
     continue_within_parent = BooleanField()
+    css_theme = ForeignKeyField(Asset, related_name='sections')
 
 class PageType(Enum):
     serial = 0
@@ -105,7 +109,7 @@ class PageType(Enum):
         def python_value(self,value):
             return PageType(value)
 
-class ContentType(BaseModel):
+class ContentClass(BaseModel):
     type_name = CharField(unique=True)
     display_name = CharField()
     description = TextField(null=True)
@@ -114,7 +118,7 @@ class Page(BaseModel):
     page_id = CharField(unique=True)
     section = ForeignKeyField(Section, related_name='pages', null=True)
     page_type = PageType.Field()
-    content_type = ForeignKeyField(ContentType, related_name='pages')
+    content_class = ForeignKeyField(ContentClass, related_name='pages')
     title = CharField()
     description = TextField(null=True)
     publish_date = DateField(index=True)
@@ -123,7 +127,7 @@ class Page(BaseModel):
     theme = ForeignKeyField(Theme, null=True)
     class Meta:
         indexes = (
-            (('page_type', 'series', 'chapter', 'publish_date'), False),
+            (('page_type', 'section', 'publish_date'), False),
         )
 
     @property
@@ -168,19 +172,12 @@ class Page(BaseModel):
                 return r
         return None
 
-class Asset(BaseModel):
-    user = ForeignKeyField(User, related_name='assets')
-    content_file = CharField()
-    content_type = CharField()
-    width = IntegerField()
-    height = IntegerField()
-
 class PageContent(BaseModel):
     ''' A content chunk within a page '''
     page = ForeignKeyField(Page, related_name='assets')
     display_order = IntegerField(default=0)
-    content_type = CharField(null=True)
-    asset = ForeignKeyField(Asset, related_name='pages', null=True)
+    content_class = ForeignKeyField(ContentClass, null=True)
+    image = ForeignKeyField(ImageAsset, related_name='pages', null=True)
     asset_text = TextField(null=True)
     asset_link = TextField(null=True)
     # Custom HTML for this content chunk, to override the default.
@@ -191,11 +188,6 @@ class PageContent(BaseModel):
         indexes = (
             (('page', 'display_order'), False),
         )
-
-class Transcript(BaseModel):
-    page = ForeignKeyField(Page, related_name='transcripts')
-    text = TextField()
-    accepted = BooleanField(default=False)
 
 class Tag(BaseModel):
     name = CharField(unique=True)
@@ -208,25 +200,20 @@ class TaggedPage(BaseModel):
 
 all_types = [
     Global, #MUST come first
+
     User,
+    PasswordIdentity,
     AdminLog,
 
-    UserLinks,
-
-    RenderSpec,
-    RenderQuality,
-    Theme,
-
-    Series,
-    Story,
-    Chapter,
-    Page,
-
     Asset,
-    RenderedAsset,
+    Image,
+    Section,
+    ContentClass,
+
+    Page,
     PageContent,
-    Transcript,
-    NewsPost,
+    Tag,
+    TaggedPage,
 ]
 
 def create_tables():
