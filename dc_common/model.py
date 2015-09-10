@@ -83,19 +83,22 @@ class AdminLog(BaseModel):
 
 class Asset(BaseModel):
     user = ForeignKeyField(User, related_name='assets')
-    content_file = CharField()
+    content_file = CharField(unique=True)
     content_type = CharField()
+    content_hash = CharField(index=True) # SHA-1
+    width = IntegerField(null=True)
+    height = IntegerField(null=True)
 
-class Image(Asset):
-    width = IntegerField()
-    height = IntegerField()
+class Theme(BaseModel):
+    owner = ForeignKeyField(User, related_name='themes')
+    css_path = ForeignKeyField(Asset, related_name='themes')
 
 class Section(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
     key = CharField(unique=True)
     title = CharField()
     description = TextField()
-    parent = ForeignKeyField(Section, related_name='children', null=True)
+    parent = ForeignKeyField('self', related_name='children', null=True)
     continue_within_parent = BooleanField()
     css_theme = ForeignKeyField(Asset, related_name='sections')
 
@@ -206,7 +209,6 @@ all_types = [
     AdminLog,
 
     Asset,
-    Image,
     Section,
     ContentClass,
 
