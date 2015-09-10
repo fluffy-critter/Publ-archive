@@ -31,14 +31,16 @@ like maybe
         for each output size up to min(target_width*max_mult,width):
             specs.push("%s %dx" % generate_image(asset.path, actual_width))
         return specs.join(', ')
+    # hey um how do we specify JPEG quality?
 
 and then in template it looks like
 
     {% for chunk in page.chunks %}
-    <div class="{{chunk.content_style}">
-        {img src="{{chunk|image_src(500)}}" srcset="{{chunk|image_srcset(500)}}
-    </div>
+        {img src="{{chunk.asset|image_src(500)}}" srcset="{{chunk.asset|image_srcset(500)}}
 
 and then when run that'd be generating like
 
     <img src="/img/abc123_250.jpg" srcset="/img/abc123_250.jpg 1x, /img/abc123_500.jpg 2x">
+
+
+generate_image would also be all "hey that file already exists so i won't make it again". also its output should probably be memoized in the cache so it doesn't even need to check.
