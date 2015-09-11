@@ -40,7 +40,7 @@ and then in template it looks like
 
 and then when run that'd be generating like
 
-    <img src="/img/abc123_250.jpg" srcset="/img/abc123_250.jpg 1x, /img/abc123_500.jpg 2x">
+    <img src="/img/abc123_500.jpg" srcset="/img/abc123_500.jpg 1x, /img/abc123_1000.jpg 2x">
 
 
 generate_image would also be all "hey that file already exists so i won't make it again". also its output should probably be memoized in the cache so it doesn't even need to check.
