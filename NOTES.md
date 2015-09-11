@@ -1,6 +1,6 @@
-== Notes
+# Notes
 
-===asset store
+## asset store
 
 Keep the assets in the original named upload file hierarchy (static content or whatev).
 
@@ -13,7 +13,7 @@ Allow people to just add arbitrary assets within said hierarchy via scp/whatever
    * otherwise, if SHA matches one in step 1's map, change path in database
    * otherwise, create new file.
 
-===image server
+## image server
 able to be hosted in separate domain. for CDNs etc
 
 template engine will have format for getting an image from pathname/asset => generated name. this format will also generate (or queue for generation) the image to a static, readable store (public/img/ or configurable for CDN purposes or whatever). generated file should probably be just like `{source sha}_{width}.{extension}`
