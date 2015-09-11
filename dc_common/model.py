@@ -114,7 +114,7 @@ class PublishStatus(Enum):
     published = 1   # Visible
     pending = 2     # Will be published when now > pubdate
     queued = 3      # Will be published when the queue gets to it
-    static_page = 4 # Statically attached to the section rather than in the archive flow
+    static_Entry = 4 # Statically attached to the section rather than in the archive flow
 
     @staticmethod
     class Field(IntegerField):
@@ -123,11 +123,11 @@ class PublishStatus(Enum):
         def python_value(self,value):
             return PublishStatus(v)
 
-class Page(BaseModel):
-    page_id = CharField(unique=True)
-    user = ForeignKeyField(User, related_name='pages')
-    section = ForeignKeyField(Section, related_name='pages', null=True)
-    content_class = ForeignKeyField(ContentClass, related_name='pages')
+class Entry(BaseModel):
+    entry_id = CharField(unique=True)
+    user = ForeignKeyField(User, related_name='entries')
+    section = ForeignKeyField(Section, related_name='entries', null=True)
+    content_class = ForeignKeyField(ContentClass, related_name='entries')
     title = CharField()
     description = TextField(null=True)
     crate_date = DateField(default=datetime.datetime.utcnow())
@@ -146,117 +146,113 @@ class Page(BaseModel):
         return (self.publish_date,self.key)
 
     @staticmethod
-    def visible_pages(section=None):
-        q = Page.select().where(Page.publish_status == PublishStatus.published)
+    find_in_section(section,recurse=False):
+        w = (Entry.section == section)
+        if recurse:
+            for child in section.children:
+                w = w | Entry.find_in_section(child,recurse)
+        return w
+
+    @staticmethod
+    def visible_entries(section=None,recurse=False):
+        q = Entry.select().where(Entry.publish_status == PublishStatus.published)
         if section:
-            q = q.where(Page.section == section)
+            q = q.where(Entry.find_in_section(section, recurse))
         return q
 
     @property
-    def next_page(self):
-        q = Page.visible_pages(Page.section).where(Page.publish_date >= self.publish_date)
+    def next(self):
+        q = Entry.visible_entries(Entry.section).where(Entry.publish_date >= self.publish_date)
 
-        q = q.order_by(Page.publish_date, Page.key)
+        q = q.order_by(Entry.publish_date, Entry.key)
         for r in q:
             if (r.archive_order > self.archive_order):
                 return r
         return None
 
     @property
-    def previous_page(self):
-        q = Page.visible_pages(Page.section).where(Page.publish_date <= self.publish_date)
+    def previous(self):
+        q = Entry.visible_entries(Entry.section).where(Entry.publish_date <= self.publish_date)
 
-        q = q.order_by(-Page.publish_date, -Page.key)
+        q = q.order_by(-Entry.publish_date, -Entry.key)
         for r in q:
             if (r.archive_order < self.archive_order):
                 return r
         return None
 
-class PageContent(BaseModel):
-    ''' A content chunk within a page '''
-    page = ForeignKeyField(Page, related_name='chunks')
+class Chunk(BaseModel):
+    ''' A content chunk within a Entry '''
+    entry = ForeignKeyField(Entry, related_name='chunks')
     display_order = IntegerField(default=0)
+
     content_class = ForeignKeyField(ContentClass, null=True)
 
-    asset = ForeignKeyField(Asset, related_name='chunks', null=True)
-    asset_title = TextField(null=True)
-    asset_link = TextField(null=True)
-    text = TextField(null=True)
+    image_asset = ForeignKeyField(Asset, related_name='chunks', null=True)
+    image_title = TextField(null=True)
+    image_link = TextField(null=True) # Will go to lightbox album if None
 
-    '''
-    Custom HTML for this content chunk, to override the default.
-    Default is something like:
+    text_markdown = TextField(null=True)
 
-        <div class="{content_type}">
-            <a href="{asset_link}"><img src="{asset_src}" srcset="{asset_srcset}" title="{asset_text}"></a>
-            {{text|markdown}}
-        </div>
-    '''
-    custom_html = TextField(null=True)
     class Meta:
         indexes = (
-            (('page', 'display_order'), False),
+            (('entry', 'display_order'), False),
         )
 
 class Tag(BaseModel):
     name = CharField(unique=True)
 
-class TaggedPage(BaseModel):
-    tag = ForeignKeyField(Tag, 'pages')
-    page = ForeignKeyField(Page, 'tags')
+class TaggedEntry(BaseModel):
+    tag = ForeignKeyField(Tag, 'entries')
+    Entry = ForeignKeyField(Entry, 'tags')
 
-class PageBookmark(BaseModel):
+class Bookmark(BaseModel):
     ''' A 'bookmark' within a section, e.g. chapter indices '''
     section = ForeignKeyField(Section, related_name='bookmarks')
-    page = ForeignKeyField(Page)
+    entry = ForeignKeyField(Entry)
     name = CharField()
 
     @staticmethod
-    def before(page):
-        ''' Get the last bookmark on or before this page '''
-        q = PageBookmark.select().join(Page).where(
-            (PageBookmark.section == section)
-            & (Page.publish_date <= page.publish_date)
-            ).order_by(-Page.publish_date)
+    def before(loc):
+        ''' Get the last bookmark on or before this Entry '''
+        q = Bookmark.select().join(Entry).where(
+            (Bookmark.section == section)
+            & (Entry.publish_date <= loc.publish_date)
+            ).order_by(-Entry.publish_date, -Entry.key)
         for r in q:
-            if r.page.archive_order <= page.archive_order:
-                return r
+            return r
         return None
 
     @staticmethod
-    def after(page):
-        ''' Get the next bookmark after this page '''
-        q = PageBookmark.select().join(Page).where(
-            (PageBookmark.section == section)
-            & (Page.publish_date <= page.publish_date)
-            ).order_by(Page.publish_date)
+    def after(loc):
+        ''' Get the next bookmark after this Entry '''
+        q = EntryBookmark.select().join(Entry).where(
+            (EntryBookmark.section == section)
+            & (Entry.publish_date > loc.publish_date)
+            ).order_by(Entry.publish_date, Entry.key)
         for r in q:
-            if r.page.archive_order > page.archive_order:
-                return r
+            return r
         return None
 
     @property
     def previous(self):
         ''' Get the previous bookmark '''
-        q = PageBookmark.select().join(Page).where(
-            (PageBookmark.section == self.section)
-            & (Page.publish_date <= self.page.publish_date)
-            ).order_by(-Page.publish_date)
+        q = EntryBookmark.select().join(Entry).where(
+            (EntryBookmark.section == self.section)
+            & (Entry.publish_date <= self.Entry.publish_date)
+            ).order_by(-Entry.publish_date, -Entry.key)
         for r in q:
-            if r.page.archive_order < self.page.archive_order:
-                return r
+            return r
         return None
 
     @property
     def next(self):
         ''' Get the next bookmark '''
-        q = PageBookmark.select().join(Page).where(
-            (PageBookmark.section == self.section)
-            & (Page.publish_date <= self.page.publish_date)
-            ).order_by(Page.publish_date)
+        q = EntryBookmark.select().join(Entry).where(
+            (EntryBookmark.section == self.section)
+            & (Entry.publish_date <= self.Entry.publish_date)
+            ).order_by(Entry.publish_date, Entry.key)
         for r in q:
-            if r.page.archive_order > self.page.archive_order:
-                return r
+            return r
         return None
 
 ''' Table management '''
@@ -272,11 +268,11 @@ all_types = [
     Section,
     ContentClass,
 
-    Page,
-    PageContent,
+    Entry,
+    Chunk,
     Tag,
-    TaggedPage,
-    PageBookmark,
+    TaggedEntry,
+    Bookmark,
 ]
 
 def create_tables():
