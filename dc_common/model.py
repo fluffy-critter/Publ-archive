@@ -94,6 +94,8 @@ class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
     name = CharField()
     css_path = CharField()
+    section_template = CharField(null=True)
+    entry_template = CharField(null=True)
 
 class Section(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
@@ -114,7 +116,7 @@ class PublishStatus(Enum):
     published = 1   # Visible
     pending = 2     # Will be published when now > pubdate
     queued = 3      # Will be published when the queue gets to it
-    static_Entry = 4 # Statically attached to the section rather than in the archive flow
+    static_page = 4 # Statically attached to the section rather than in the archive flow
 
     @staticmethod
     class Field(IntegerField):
@@ -146,7 +148,7 @@ class Entry(BaseModel):
         return (self.publish_date,self.key)
 
     @staticmethod
-    find_in_section(section,recurse=False):
+    def find_in_section(section,recurse=False):
         w = (Entry.section == section)
         if recurse:
             for child in section.children:
