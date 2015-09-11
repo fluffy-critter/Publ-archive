@@ -4,6 +4,7 @@ from peewee import *
 from playhouse.migrate import migrate
 from config import database, migrator
 from enum import Enum
+import datetime
 
 database.connect()
 
@@ -91,46 +92,53 @@ class Asset(BaseModel):
 
 class Theme(BaseModel):
     owner = ForeignKeyField(User, related_name='themes')
-    css_path = ForeignKeyField(Asset, related_name='themes')
+    name = CharField()
+    css_path = CharField()
 
 class Section(BaseModel):
     owner = ForeignKeyField(User, related_name='series')
     key = CharField(unique=True)
-    title = CharField()
+    name = CharField()
     description = TextField()
     parent = ForeignKeyField('self', related_name='children', null=True)
-    continue_within_parent = BooleanField()
-    css_theme = ForeignKeyField(Asset, related_name='sections')
-
-class PageType(Enum):
-    serial = 0
-    static = 1
-    @staticmethod
-    class Field(IntegerField):
-        def db_value(self,value):
-            return value.value
-        def python_value(self,value):
-            return PageType(value)
+    theme = ForeignKeyField(Theme, null=True)
+    splash_image = ForeignKeyField(Asset)
 
 class ContentClass(BaseModel):
     type_name = CharField(unique=True)
     display_name = CharField()
     description = TextField(null=True)
 
+class PublishStatus(Enum):
+    draft = 0       # Not yet published
+    published = 1   # Visible
+    pending = 2     # Will be published when now > pubdate
+    queued = 3      # Will be published when the queue gets to it
+    static_page = 4 # Statically attached to the section rather than in the archive flow
+
+    @staticmethod
+    class Field(IntegerField):
+        def db_value(self,ee):
+            return ee.value
+        def python_value(self,value):
+            return PublishStatus(v)
+
 class Page(BaseModel):
     page_id = CharField(unique=True)
+    user = ForeignKeyField(User, related_name='pages')
     section = ForeignKeyField(Section, related_name='pages', null=True)
-    page_type = PageType.Field()
     content_class = ForeignKeyField(ContentClass, related_name='pages')
     title = CharField()
     description = TextField(null=True)
-    publish_date = DateField(index=True)
+    crate_date = DateField(default=datetime.datetime.utcnow())
+    publish_date = DateField(default=datetime.datetime.utcnow(),index=True)
+    publish_status = PublishStatus.Field(default=PublishStatus.draft)
     is_visible = BooleanField(default=False)
     notes = TextField(null=True)
     theme = ForeignKeyField(Theme, null=True)
     class Meta:
         indexes = (
-            (('page_type', 'section', 'publish_date'), False),
+            (('user', 'publish_status', 'section', 'publish_date'), False),
         )
 
     @property
@@ -138,22 +146,15 @@ class Page(BaseModel):
         return (self.publish_date,self.key)
 
     @staticmethod
-    def visible_pages(now,section=None):
-        q = Page.select().where((Page.is_visible == True) & (Page.publish_date < now))
+    def visible_pages(section=None):
+        q = Page.select().where(Page.publish_status == PublishStatus.published)
         if section:
-            w = (Page.section == section)
-            while section.continue_within_parent:
-                w = w | (Page.section == section.parent)
-                section = section.parent
-            q = q.where(w)
+            q = q.where(Page.section == section)
         return q
 
     @property
-    def next_page(self,now,same_section=False):
-        q = Page.visible_pages(
-            now,
-            same_section and Page.section
-            ).where(Page.publish_date >= self.publish_date)
+    def next_page(self):
+        q = Page.visible_pages(Page.section).where(Page.publish_date >= self.publish_date)
 
         q = q.order_by(Page.publish_date, Page.key)
         for r in q:
@@ -162,12 +163,8 @@ class Page(BaseModel):
         return None
 
     @property
-    def previous_page(self,now,same_section=False):
-        q = Page.visible_pages(
-            now,
-            same_series and Page.series,
-            same_chapter and Page.chapter
-            ).where(Page.publish_date <= self.publish_date)
+    def previous_page(self):
+        q = Page.visible_pages(Page.section).where(Page.publish_date <= self.publish_date)
 
         q = q.order_by(-Page.publish_date, -Page.key)
         for r in q:
@@ -177,15 +174,24 @@ class Page(BaseModel):
 
 class PageContent(BaseModel):
     ''' A content chunk within a page '''
-    page = ForeignKeyField(Page, related_name='assets')
+    page = ForeignKeyField(Page, related_name='chunks')
     display_order = IntegerField(default=0)
     content_class = ForeignKeyField(ContentClass, null=True)
-    image = ForeignKeyField(ImageAsset, related_name='pages', null=True)
-    asset_text = TextField(null=True)
+
+    asset = ForeignKeyField(Asset, related_name='chunks', null=True)
+    asset_title = TextField(null=True)
     asset_link = TextField(null=True)
-    # Custom HTML for this content chunk, to override the default.
-    # Default is something like:
-    #  <div class="{content_type}"><a href="{asset_link}"><img src="{asset_src}" srcset="{asset_srcset}" title="{asset_text}"></a></div>
+    text = TextField(null=True)
+
+    '''
+    Custom HTML for this content chunk, to override the default.
+    Default is something like:
+
+        <div class="{content_type}">
+            <a href="{asset_link}"><img src="{asset_src}" srcset="{asset_srcset}" title="{asset_text}"></a>
+            {{text|markdown}}
+        </div>
+    '''
     custom_html = TextField(null=True)
     class Meta:
         indexes = (
@@ -198,6 +204,60 @@ class Tag(BaseModel):
 class TaggedPage(BaseModel):
     tag = ForeignKeyField(Tag, 'pages')
     page = ForeignKeyField(Page, 'tags')
+
+class PageBookmark(BaseModel):
+    ''' A 'bookmark' within a section, e.g. chapter indices '''
+    section = ForeignKeyField(Section, related_name='bookmarks')
+    page = ForeignKeyField(Page)
+    name = CharField()
+
+    @staticmethod
+    def before(page):
+        ''' Get the last bookmark on or before this page '''
+        q = PageBookmark.select().join(Page).where(
+            (PageBookmark.section == section)
+            & (Page.publish_date <= page.publish_date)
+            ).order_by(-Page.publish_date)
+        for r in q:
+            if r.page.archive_order <= page.archive_order:
+                return r
+        return None
+
+    @staticmethod
+    def after(page):
+        ''' Get the next bookmark after this page '''
+        q = PageBookmark.select().join(Page).where(
+            (PageBookmark.section == section)
+            & (Page.publish_date <= page.publish_date)
+            ).order_by(Page.publish_date)
+        for r in q:
+            if r.page.archive_order > page.archive_order:
+                return r
+        return None
+
+    @property
+    def previous(self):
+        ''' Get the previous bookmark '''
+        q = PageBookmark.select().join(Page).where(
+            (PageBookmark.section == self.section)
+            & (Page.publish_date <= self.page.publish_date)
+            ).order_by(-Page.publish_date)
+        for r in q:
+            if r.page.archive_order < self.page.archive_order:
+                return r
+        return None
+
+    @property
+    def next(self):
+        ''' Get the next bookmark '''
+        q = PageBookmark.select().join(Page).where(
+            (PageBookmark.section == self.section)
+            & (Page.publish_date <= self.page.publish_date)
+            ).order_by(Page.publish_date)
+        for r in q:
+            if r.page.archive_order > self.page.archive_order:
+                return r
+        return None
 
 ''' Table management '''
 
@@ -216,6 +276,7 @@ all_types = [
     PageContent,
     Tag,
     TaggedPage,
+    PageBookmark,
 ]
 
 def create_tables():
