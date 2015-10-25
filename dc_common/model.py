@@ -257,6 +257,24 @@ class Bookmark(BaseModel):
             return r
         return None
 
+class SectionLink(BaseModel):
+    section = ForeignKeyField(Section, related_name='static_pages')
+    link_name = CharField() # name in the URL
+    link_text = CharField() # name in the <a> text
+    link_title = CharField(null=True) # title="" attribute
+    display_order = IntegerField()
+
+    # external URL to redirect to
+    link_target = TextField(null=True)
+
+    # internal entry to format (usually one of type PublishStatus.static_page)
+    entry = ForeignKeyField(Entry,null=True)
+
+    class Meta:
+        indexes = (
+            (('section', 'display_order'), False),
+        )
+
 ''' Table management '''
 
 all_types = [
@@ -275,6 +293,8 @@ all_types = [
     Tag,
     TaggedEntry,
     Bookmark,
+
+    SectionLink,
 ]
 
 def create_tables():
